@@ -6,14 +6,14 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,fig.path = "./figures/")
-require(ggplot2)
+knitr::opts_chunk$set(echo = TRUE, fig.path = "./figures/")
 require(caret)
 require(corrplot)
-require(Rtsne)
-require(xgboost)
+require(rpart.plot)
 require(stats)
-require(ggplot2)
+require(doMC)
+registerDoMC(cores = 4)
+set.seed(2501)
 ```
 
 ## Background
@@ -22,7 +22,8 @@ Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible t
 
 ## Data Processing
 
-```{r download}
+Downloading files as needed and loading them into the workspace
+```{r download, cache = TRUE}
 if (!file.exists("pml-training.csv")) { 
   download.file(
     "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
@@ -34,9 +35,78 @@ if (!file.exists("pml-testing.csv")) {
     "pml-testing.csv")
 }
 
-train = read.csv("pml-training.csv")
-test = read.csv("pml-testing.csv")
+train = read.csv("pml-training.csv", sep = ",", na.strings=c("NA", "#DIV/0!",""))
+test = read.csv("pml-testing.csv", sep = ",", na.strings=c("NA", "#DIV/0!",""))
 
 dim(train)
 dim(test)
+```
+
+## Data Cleanup
+Remove observation with mission values and reduce data set size by dropping not used variables. Finally slice the training set into a training (70%) and cross validation (30%) part. 
+```{r cleanup, cache = TRUE}
+naNameRatio.train <- sapply(train, function(x) {sum(is.na(x) == TRUE) / length(x)})
+naNameRatio.test <- sapply(test, function(x) {sum(is.na(x) == TRUE) / length(x)})
+
+train <- train[,names(which(naNameRatio.train < 0.95))]
+test <- test[,names(which(naNameRatio.test < 0.95))]
+
+train.clean <- train[,!grepl("X|timestamp|user_name|window", names(train))]
+test.clean <- test[,!grepl("X|timestamp|user_name|window", names(test))]
+
+index.train <- createDataPartition(train.clean$classe, p=0.70, list = FALSE)
+train.data <- train.clean[index.train , ]
+train.cross <- train.clean[-index.train , ]
+```
+
+## Training Random Forest
+
+Random Forest training with 5-fold cross validation similar to the one used by the researchers of the original study. 
+```{r training, cache = TRUE}
+control.rf <- trainControl(method = "cv", classProbs = TRUE, savePredictions = TRUE,
+                           allowParallel = TRUE, number = 10)
+model.rf <- train(classe ~ ., data = train.data, method = "rf", trControl = control.rf)
+```
+
+## Model Validation
+
+The model performance is measured against the cross validation data set.
+```{r validation, cache = TRUE}
+cross.rf <- predict(model.rf, train.cross)
+confusionMatrix(train.cross$classe, cross.rf)
+postResample(cross.rf, train.cross$classe)
+```
+
+## Model Predictions
+
+The fitted model is now being used to predict the test data, in order to answer the project quiz.
+```{r predictions, cache = TRUE}
+predict(model.rf, newdata = test.clean)
+```
+
+## Appendix 
+
+### 1. Variable Importance Visualization
+```{r importance, cache = TRUE}
+print(plot(varImp(model.rf, scale = FALSE)))
+```
+
+### 3. Correlation Matrix Visualization
+```{r corr-matrix, cache = TRUE}
+corrplot(cor(train.data[, -length(names(train.data))]), method="color")
+```
+
+### 3. Decision Tree Visualization
+```{r tree, cache = TRUE}
+prp(rpart(classe ~ ., data=train.data, method="class"))
+```
+
+### 4. Error Rate Visualization
+```{r error, cache = TRUE}
+plot(model.rf$finalModel, main = "Random Tree Model Error Rate")
+```
+
+### 5. Session Info
+```{r session}
+sessionInfo()
 ```
