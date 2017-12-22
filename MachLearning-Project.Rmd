@@ -6,13 +6,13 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.path = "./figures/")
+knitr::opts_chunk$set(echo = TRUE, keep_md, fig.path = "./figures/")
 require(caret)
 require(corrplot)
 require(rpart.plot)
 require(stats)
 require(doMC)
-registerDoMC(cores = 4)
+registerDoMC(cores = 8)
 set.seed(2501)
 ```
 
